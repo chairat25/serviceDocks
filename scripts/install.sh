@@ -19,7 +19,7 @@ fail() { printf '\033[1;31mError:\033[0m %s\n' "$1" >&2; exit 1; }
 # Reads y/n from the terminal even when the script itself is piped from curl.
 ask() {
     local answer=""
-    if [[ -r /dev/tty ]]; then
+    if (: < /dev/tty) 2>/dev/null; then
         read -r -p "$1 [Y/n] " answer < /dev/tty || answer=""
     fi
     [[ -z "$answer" || "$answer" =~ ^[Yy] ]]
@@ -39,7 +39,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 zip_name="$(basename "$zip_url")"
 
-info "Downloading $zip_name…"
+info "Downloading ${zip_name}…"
 curl -fsSL "$zip_url" -o "$work/$zip_name" || fail "Download failed."
 
 if [[ -n "$sha_url" ]]; then
@@ -63,7 +63,7 @@ if [[ -d "$DEST" ]]; then
     ask "Replace the existing $DEST?" || fail "Cancelled."
 fi
 
-info "Installing to $DEST…"
+info "Installing to ${DEST}…"
 if [[ -w /Applications ]]; then
     rm -rf "$DEST" && ditto "$work/unpacked/$APP_NAME.app" "$DEST"
 else
@@ -73,7 +73,7 @@ fi
 info "Removing the quarantine flag…"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || sudo xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
-info "Opening $APP_NAME…"
+info "Opening ${APP_NAME}…"
 open "$DEST" || true
 sleep 3
 
