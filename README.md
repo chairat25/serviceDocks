@@ -120,8 +120,6 @@ Sources/ServiceDockCore/   pure logic (config, log parsing, readiness, ps stats,
 Sources/ServiceDock/       app: ProcessRunner (posix_spawn + process group), ServiceRuntime, AppModel, SwiftUI views
 Tests/ServiceDockCoreTests swift-testing
 scripts/                   build-app.sh, Info.plist, make-icon.swift
-implementplan.md           แผน + progress log
-CHANGELOG.md               ประวัติการเปลี่ยนแปลง
 ```
 
 ## Development
