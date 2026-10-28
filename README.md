@@ -45,12 +45,19 @@ ServiceDock คือ macOS menu-bar app สำหรับ dev ที่ต้�
 
 ตัวอย่าง: `master-data` (Stage 1, ต้อง compile ก่อน) → `authentication`, `profile` (Stage 2) → `genie-fe` (Stage 3)
 
-## ดาวน์โหลด
+## ติดตั้ง (แนะนำ)
 
-โหลด `.dmg` จาก [Releases](https://github.com/chairat25/serviceDocks/releases/latest) (universal, macOS 15+) → ลากเข้า Applications
-app ไม่ได้ notarize → เปิดครั้งแรกให้คลิกขวา → **Open** หรือรัน `xattr -dr com.apple.quarantine /Applications/ServiceDock.app`
+```bash
+curl -fsSL https://raw.githubusercontent.com/chairat25/serviceDocks/main/scripts/install.sh | bash
+```
 
-## ติดตั้ง / Build
+โหลด release ล่าสุด → ตรวจ SHA-256 → ติดตั้งที่ `/Applications` → ลบ quarantine ให้อัตโนมัติ → เปิด app
+ถ้า macOS ยังบล็อก script จะถามว่าจะเปิด **System Settings → Privacy & Security** ไหม แล้วกด **Open Anyway**
+
+ติดตั้งเองจาก [Releases](https://github.com/chairat25/serviceDocks/releases/latest) (`.dmg`, universal, macOS 15+): ลากเข้า Applications แล้วรัน
+`xattr -dr com.apple.quarantine /Applications/ServiceDock.app` หรือคลิกขวา → **Open**
+
+## Build จาก source
 
 ต้องการ macOS 15+ และ Xcode Command Line Tools (Swift 6)
 
