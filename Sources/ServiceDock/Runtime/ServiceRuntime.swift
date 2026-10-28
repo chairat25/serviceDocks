@@ -75,9 +75,11 @@ final class ServiceRuntime: Identifiable {
     func recentErrors(limit: Int) -> [LogLine] {
         Array(logs.lines.lazy.reversed().filter { $0.level == .error }.prefix(limit).reversed())
     }
+    /// Only a crashed process counts as a problem; error lines alone are often transient
+    /// (a request that failed during start-up) and only show as the red badge.
     var hasProblem: Bool {
         if case .down = status { return true }
-        return logs.errorCount > 0
+        return false
     }
 
     /// What the staged start-up should conclude about this service.
@@ -148,6 +150,12 @@ final class ServiceRuntime: Identifiable {
         generation += 1
         runner?.terminate()
         return runner
+    }
+
+    /// Hides the error/warn badges until new ones arrive; the log keeps its lines.
+    func clearErrorCount() {
+        flushPending()
+        logs.resetCounts()
     }
 
     func clearLogs() {

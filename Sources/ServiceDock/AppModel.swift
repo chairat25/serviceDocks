@@ -51,6 +51,7 @@ final class AppModel {
 
     var runningCount: Int { runtimes.count { $0.status.isAlive } }
     var problemCount: Int { runtimes.count(where: \.hasProblem) }
+    var hasErrorCounts: Bool { runtimes.contains { $0.logs.errorCount > 0 || $0.logs.warnCount > 0 } }
 
     func runtime(for id: UUID) -> ServiceRuntime? {
         runtimes.first { $0.id == id }
@@ -157,6 +158,10 @@ final class AppModel {
         guard updated != runtime.config else { return }
         runtime.update(config: updated)
         save()
+    }
+
+    func clearAllErrorCounts() {
+        runtimes.forEach { $0.clearErrorCount() }
     }
 
     /// Puts every tile in All Services back to its automatic size.

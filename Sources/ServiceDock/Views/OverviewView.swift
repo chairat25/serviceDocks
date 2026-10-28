@@ -71,7 +71,7 @@ struct OverviewView: View {
             Label("\(model.runningCount) / \(model.runtimes.count) running", systemImage: "square.stack.3d.up")
                 .font(.system(size: 13, weight: .semibold))
             if model.problemCount > 0 {
-                Label("\(model.problemCount) with problems", systemImage: "exclamationmark.triangle.fill")
+                Label("\(model.problemCount) down", systemImage: "exclamationmark.triangle.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.red)
             }

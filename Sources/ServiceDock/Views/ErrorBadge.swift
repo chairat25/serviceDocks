@@ -18,6 +18,9 @@ struct ErrorBadge: View {
                 CountBadge(count: runtime.logs.errorCount, color: Theme.red, symbol: "xmark.octagon.fill")
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                Button("Clear Error Count") { runtime.clearErrorCount() }
+            }
             .onHover(perform: hoverChanged)
             .popover(isPresented: $isPreviewShown, arrowEdge: .bottom) {
                 ErrorPreview(runtime: runtime, lines: runtime.recentErrors(limit: Self.previewLimit))
@@ -63,7 +66,7 @@ private struct ErrorPreview: View {
                 .font(.system(size: 11, design: .monospaced))
             }
             Divider()
-            Text("Click the badge to open the log filtered to errors.")
+            Text("Click the badge to open the log filtered to errors · right-click to clear the count.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.secondaryText)
         }

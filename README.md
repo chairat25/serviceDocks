@@ -18,6 +18,8 @@ ServiceDock คือ macOS menu-bar app สำหรับ dev ที่ต้�
 | **ตรวจจับ `.env` เปลี่ยน** | แก้ `.env`, `.env.local`, `.env.development` … หลัง service start → ขึ้น badge **env changed** กดเพื่อ restart ได้เลย |
 | **Mini monitor ราย service** | หน้าต่าง Logs / Info / Actions, uptime, CPU, RAM, auto scroll, ค้นหา, filter เฉพาะ warn/error, clear, copy |
 | **All Services monitor** | เปิดเป็นหน้าใน popup เดียวกัน (popup ขยายตามหน้า) กด ‹ หรือ Esc เพื่อกลับ — โหมด **Grid**: แต่ละ service เป็น tile มี log สดของตัวเอง + สถานะ/CPU/RAM/ปุ่ม run-restart — จำนวนคอลัมน์ปรับอัตโนมัติตามจำนวน service และขนาดหน้าต่าง (กรอง warn/error, ซ่อน/แสดงราย service ได้, **ลาก header เพื่อสลับตำแหน่ง**, **ลากขอบไหนก็ได้ (นอก/ใน) หรือมุมขวาล่างเพื่อปรับขนาด** — กว้างล็อกตามคอลัมน์, ดับเบิลคลิกขอบเพื่อกลับเป็นอัตโนมัติ, ปุ่ม **Default Size** คืนขนาดปกติทุก tile) หรือโหมด **Combined**: ตารางสถานะ + log รวมทุกตัวสีแยกราย service |
+| **ปรับขนาด popup** | ลากมุมขวาล่างของ popup — แต่ละหน้าจำขนาดของตัวเอง, ดับเบิลคลิกมุม = ขนาดปกติ |
+| **Clear error count** | คลิกขวาที่ badge แดง → *Clear Error Count* (log ยังอยู่) หรือเมนู ⋯ → *Clear All Error Counts* |
 | **ไม่ทิ้ง process ค้าง** | ทุก service รันใน process group ของตัวเอง — stop/quit จะฆ่า `yarn → node → …` ทั้งต้นไม้ (SIGTERM, ไม่ตายใน 5 วิ → SIGKILL) |
 
 ## ฆ่าตัวเก่าที่ถือ port ก่อนรัน

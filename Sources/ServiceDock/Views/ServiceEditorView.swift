@@ -7,6 +7,8 @@ struct ServiceEditorView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     let target: EditorTarget
+    /// Set when shown as a page of the menu-bar panel: closes the page instead of the window.
+    var onClose: (() -> Void)?
 
     @State private var draft = ServiceConfig(name: "", path: "", command: "yarn start:dev")
     @State private var isIconPicked = false
@@ -17,6 +19,34 @@ struct ServiceEditorView: View {
     private var isNew: Bool { target == .new }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if let onClose { pageHeader(onClose: onClose) }
+            form
+        }
+        .background(Theme.background)
+        .preferredColorScheme(.dark)
+        .navigationTitle(isNew ? "Add Service" : "Edit Service")
+        .onAppear(perform: load)
+    }
+
+    private func pageHeader(onClose: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            Button(action: onClose) {
+                Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold))
+                    .frame(width: 24, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Back")
+            Text(isNew ? "Add Service" : "Edit \(draft.name)").font(.system(size: 14, weight: .semibold))
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .overlay(alignment: .bottom) { Divider().overlay(Theme.stroke) }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 TextField("Name", text: $draft.name, prompt: Text("auth-service"))
@@ -59,12 +89,8 @@ struct ServiceEditorView: View {
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
         .safeAreaInset(edge: .bottom) { buttons }
-        .frame(width: 520)
-        .fixedSize(horizontal: false, vertical: true)
-        .background(Theme.background)
-        .preferredColorScheme(.dark)
-        .navigationTitle(isNew ? "Add Service" : "Edit Service")
-        .onAppear(perform: load)
+        .frame(width: onClose == nil ? 520 : nil)
+        .fixedSize(horizontal: false, vertical: onClose == nil)
     }
 
     private var iconPicker: some View {
@@ -89,7 +115,7 @@ struct ServiceEditorView: View {
     private var buttons: some View {
         HStack {
             Spacer()
-            Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+            Button("Cancel", role: .cancel, action: close).keyboardShortcut(.cancelAction)
             Button(isNew ? "Add" : "Save", action: save)
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
@@ -136,7 +162,11 @@ struct ServiceEditorView: View {
         }
         guard errors.isEmpty else { return }
         isNew ? model.add(cleaned) : model.update(cleaned)
-        dismiss()
+        close()
+    }
+
+    private func close() {
+        if let onClose { onClose() } else { dismiss() }
     }
 
     private func trimmed(_ config: ServiceConfig) -> ServiceConfig {

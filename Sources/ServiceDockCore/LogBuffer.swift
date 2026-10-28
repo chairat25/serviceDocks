@@ -20,6 +20,12 @@ public struct LogBuffer: Sendable {
         warnCount += newLines.count { $0.level == .warn }
     }
 
+    /// Acknowledges the errors and warnings seen so far; the lines stay in the log.
+    public mutating func resetCounts() {
+        errorCount = 0
+        warnCount = 0
+    }
+
     public mutating func clear() {
         lines = []
         errorCount = 0

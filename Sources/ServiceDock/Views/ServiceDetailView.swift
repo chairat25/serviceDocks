@@ -156,6 +156,7 @@ private struct ServiceInfoTab: View {
 private struct ServiceActionsTab: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.editInPanel) private var editInPanel
     let runtime: ServiceRuntime
     let opener: WindowOpener
     let onRemoved: (() -> Void)?
@@ -182,7 +183,7 @@ private struct ServiceActionsTab: View {
                 }
             }
             Section("Service") {
-                Button("Edit…", systemImage: "pencil") { opener.editor(.edit(runtime.id)) }
+                Button("Edit…", systemImage: "pencil") { (editInPanel ?? opener.editor)(.edit(runtime.id)) }
                 Button("Remove Service", systemImage: "trash", role: .destructive) { isConfirmingDelete = true }
             }
         }

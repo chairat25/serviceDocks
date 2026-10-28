@@ -27,12 +27,18 @@ struct WindowOpener {
     }
 }
 
+/// Set by the menu-bar panel so "Edit…" opens as a page of the panel instead of a new window.
+extension EnvironmentValues {
+    @Entry var editInPanel: ((EditorTarget) -> Void)?
+}
+
 /// Which page the menu-bar panel shows.
 enum PanelRoute: Equatable {
     case list
     case service(UUID, LevelFilter)
     case startupOrder
     case overview
+    case editor(EditorTarget)
 }
 
 struct MenuBarPanel: View {
@@ -46,10 +52,49 @@ struct MenuBarPanel: View {
     private static let detailHeight: CGFloat = 560
     private static let width: CGFloat = 600
 
+    /// Sizes chosen with the resize grip; 0 = default. Each kind of page remembers its own.
+    @AppStorage("panel.list.width") private var listWidth = 0.0
+    @AppStorage("panel.list.height") private var listHeight = 0.0
+    @AppStorage("panel.detail.width") private var detailWidth = 0.0
+    @AppStorage("panel.detail.height") private var detailHeight = 0.0
+    @AppStorage("panel.overview.width") private var overviewWidth = 0.0
+    @AppStorage("panel.overview.height") private var overviewHeight = 0.0
+
+    private static var screenSize: CGSize {
+        NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
+    }
+
     /// The All Services page gets as much room as the screen allows.
-    private static var overviewSize: CGSize {
-        let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 800)
-        return CGSize(width: min(1180, screen.width - 60), height: min(760, screen.height - 80))
+    private static var defaultOverviewSize: CGSize {
+        CGSize(width: min(1180, screenSize.width - 60), height: min(760, screenSize.height - 80))
+    }
+
+    private static var limits: PanelSizing.Limits {
+        PanelSizing.Limits(minWidth: 480, minHeight: 240,
+                           maxWidth: screenSize.width - 16, maxHeight: screenSize.height - 60)
+    }
+
+    private func size(_ width: Double, _ height: Double, default fallback: CGSize) -> CGSize {
+        let size = PanelSizing.resized(width: width > 0 ? width : fallback.width,
+                                       height: height > 0 ? height : fallback.height,
+                                       dx: 0, dy: 0, limits: Self.limits)
+        return CGSize(width: size.width, height: size.height)
+    }
+
+    private var listSize: CGSize { size(listWidth, listHeight, default: CGSize(width: Self.width, height: Self.listMaxHeight)) }
+    private var detailSize: CGSize {
+        size(detailWidth, detailHeight, default: CGSize(width: Self.width, height: Self.detailHeight))
+    }
+    private var overviewSize: CGSize { size(overviewWidth, overviewHeight, default: Self.defaultOverviewSize) }
+
+    /// Which stored size the grip changes on the current page.
+    private var resizeTarget: (width: Binding<Double>, height: Binding<Double>, current: CGSize) {
+        switch route {
+        case .list: ($listWidth, $listHeight, listSize)
+        case .overview: ($overviewWidth, $overviewHeight, overviewSize)
+        case .service where backRoute == .overview: ($overviewWidth, $overviewHeight, overviewSize)
+        case .service, .startupOrder, .editor: ($detailWidth, $detailHeight, detailSize)
+        }
     }
 
     private func go(to newRoute: PanelRoute) {
@@ -67,25 +112,41 @@ struct MenuBarPanel: View {
         Group {
             switch route {
             case .list:
-                listPage(opener: opener).frame(width: Self.width)
+                listPage(opener: opener).frame(width: listSize.width)
             case .startupOrder:
                 StartupOrderPage { goBack() }
-                    .frame(width: Self.width, height: Self.detailHeight)
+                    .frame(width: detailSize.width, height: detailSize.height)
             case .overview:
                 OverviewView(onBack: goBack) { id, filter in go(to: .service(id, filter)) }
-                    .frame(width: Self.overviewSize.width, height: Self.overviewSize.height)
+                    .frame(width: overviewSize.width, height: overviewSize.height)
             case .service(let id, let filter):
                 if let runtime = model.runtime(for: id) {
+                    let pageSize = backRoute == .overview ? overviewSize : detailSize
                     ServiceDetailContent(runtime: runtime, initialFilter: filter, onBack: goBack)
                         .id("\(id)-\(filter)")
-                        .frame(width: backRoute == .overview ? Self.overviewSize.width : Self.width,
-                               height: backRoute == .overview ? Self.overviewSize.height : Self.detailHeight)
+                        .frame(width: pageSize.width, height: pageSize.height)
                 } else {
-                    listPage(opener: opener).frame(width: Self.width)
+                    listPage(opener: opener).frame(width: listSize.width)
                 }
+            case .editor(let target):
+                ServiceEditorView(target: target, onClose: goBack)
+                    .id(target)
+                    .frame(width: detailSize.width, height: detailSize.height)
+            }
+        }
+        .environment(\.editInPanel) { target in go(to: .editor(target)) }
+        .overlay(alignment: .bottomTrailing) {
+            let target = resizeTarget
+            PanelResizeGrip(current: target.current, limits: Self.limits) { size in
+                target.width.wrappedValue = size.width
+                target.height.wrappedValue = size.height
+            } onReset: {
+                target.width.wrappedValue = 0
+                target.height.wrappedValue = 0
             }
         }
         .background(Theme.background)
+        .background(KeepOnScreen())
         .preferredColorScheme(.dark)
     }
 
@@ -106,7 +167,7 @@ struct MenuBarPanel: View {
                         }
                     }
                 }
-                .frame(maxHeight: Self.listMaxHeight)
+                .frame(maxHeight: listSize.height)
                 .fixedSize(horizontal: false, vertical: true)
             }
             if let error = model.storageError {
@@ -135,13 +196,15 @@ struct MenuBarPanel: View {
             Text("\(model.runningCount) / \(model.runtimes.count) running")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.secondaryText)
-            Button { opener.editor(.new) } label: { Image(systemName: "plus") }
+            Button { go(to: .editor(.new)) } label: { Image(systemName: "plus") }
                 .buttonStyle(.borderless)
                 .help("Add service")
             Menu {
-                Button("Add Service…") { opener.editor(.new) }
+                Button("Add Service…") { go(to: .editor(.new)) }
                 Button("Startup Order…") { go(to: .startupOrder) }
                 Button("All Services Monitor") { go(to: .overview) }
+                Button("Clear All Error Counts", action: model.clearAllErrorCounts)
+                    .disabled(!model.hasErrorCounts)
                 Divider()
                 Button("Reveal Config File") {
                     NSWorkspace.shared.activateFileViewerSelecting([ConfigStore.defaultURL])
@@ -166,7 +229,7 @@ struct MenuBarPanel: View {
             Text("Add a folder and the command that starts it, e.g. yarn start:dev")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.secondaryText)
-            Button("Add Service…") { opener.editor(.new) }
+            Button("Add Service…") { go(to: .editor(.new)) }
                 .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity)
@@ -250,6 +313,7 @@ struct ServiceRow: View {
 /// The "…" menu shared by rows and windows.
 struct ServiceActionsMenu: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.editInPanel) private var editInPanel
     let runtime: ServiceRuntime
     let opener: WindowOpener
     /// Overrides "Show Logs"; defaults to opening the service window.
@@ -270,7 +334,9 @@ struct ServiceActionsMenu: View {
                 NSWorkspace.shared.open(URL(fileURLWithPath: runtime.directory))
             }
             Divider()
-            Button("Edit…") { opener.editor(.edit(runtime.id)) }
+            Button("Clear Error Count", action: runtime.clearErrorCount)
+                .disabled(runtime.logs.errorCount == 0 && runtime.logs.warnCount == 0)
+            Button("Edit…") { (editInPanel ?? opener.editor)(.edit(runtime.id)) }
             Button("Move Up") { model.move(id: runtime.id, by: -1) }
             Button("Move Down") { model.move(id: runtime.id, by: 1) }
         } label: {
@@ -279,5 +345,38 @@ struct ServiceActionsMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
+    }
+}
+
+/// Bottom-right corner of the panel: drag to resize the current page, double-click for the default size.
+private struct PanelResizeGrip: View {
+    let current: CGSize
+    let limits: PanelSizing.Limits
+    let onResize: (CGSize) -> Void
+    let onReset: () -> Void
+    @State private var startSize: CGSize?
+
+    var body: some View {
+        Image(systemName: "arrow.down.right")
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(Theme.secondaryText.opacity(0.7))
+            .frame(width: 14, height: 14)
+            .contentShape(Rectangle())
+            .padding(2)
+            .onHover { inside in if inside { NSCursor.crosshair.push() } else { NSCursor.pop() } }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { drag in
+                        let start = startSize ?? current
+                        startSize = start
+                        let size = PanelSizing.resized(width: start.width, height: start.height,
+                                                       dx: drag.translation.width, dy: drag.translation.height,
+                                                       limits: limits)
+                        onResize(CGSize(width: size.width, height: size.height))
+                    }
+                    .onEnded { _ in startSize = nil }
+            )
+            .onTapGesture(count: 2, perform: onReset)
+            .help("Drag to resize · double-click for the default size")
     }
 }

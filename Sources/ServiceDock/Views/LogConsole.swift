@@ -64,7 +64,9 @@ struct LogConsole: View {
                 .background(Theme.console)
                 .overlay {
                     if visible.isEmpty {
-                        Text(lines.isEmpty ? "No output yet" : "No lines match the filter")
+                        Text(lines.isEmpty ? "No output yet"
+                             : "No lines match the filter — older errors may have scrolled out of the log.\nRight-click the red badge to clear its count.")
+                            .multilineTextAlignment(.center)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.secondaryText)
                     }
