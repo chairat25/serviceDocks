@@ -207,6 +207,43 @@ final class AppModel {
         save()
     }
 
+    // MARK: - Export / Import
+
+    enum ImportMode {
+        /// Add new services, update same-name ones, keep the rest.
+        case merge
+        /// The imported file becomes the whole config.
+        case replace
+    }
+
+    func exportConfig(to url: URL) throws(ConfigStoreError) {
+        try ConfigStore.save(ConfigTransfer.portable(appConfig, home: NSHomeDirectory()), to: url)
+    }
+
+    /// Applies an imported config. Runtimes whose id survives keep running with the new settings;
+    /// removed services are stopped.
+    func applyImport(_ imported: AppConfig, mode: ImportMode) {
+        let next = switch mode {
+        case .merge: ConfigTransfer.merge(local: appConfig, imported: imported)
+        case .replace: ConfigTransfer.replace(local: appConfig, imported: imported)
+        }
+        let keptIDs = Set(next.services.map(\.id))
+        for runtime in runtimes where !keptIDs.contains(runtime.id) && runtime.status.isAlive {
+            runtime.stop()
+            retiring = retiring + [runtime]
+        }
+        runtimes = next.services.map { config in
+            guard let existing = runtime(for: config.id) else { return makeRuntime(config) }
+            existing.update(config: config)
+            return existing
+        }
+        stageTimeoutSeconds = next.stageTimeoutSeconds
+        commandPresets = next.commandPresets
+        startupMode = next.startupMode
+        notifyOnCrash = next.notifyOnCrash
+        save()
+    }
+
     // MARK: - Quit
 
     /// Sends SIGTERM to every service, waits briefly, then SIGKILLs whatever is left.
