@@ -20,12 +20,16 @@ struct StartupOrderPage: View {
                         }
                     }
                     .card()
+                    .disabled(model.startupMode == .parallel)
+                    .opacity(model.startupMode == .parallel ? 0.5 : 1)
                     summary
                 }
                 .padding(14)
             }
             Divider().overlay(Theme.stroke)
             timeoutRow
+                .disabled(model.startupMode == .parallel)
+                .opacity(model.startupMode == .parallel ? 0.5 : 1)
         }
     }
 
@@ -42,21 +46,32 @@ struct StartupOrderPage: View {
             IconTile(symbol: "list.number", size: 30, tint: Theme.accent)
             Text("Startup Order").font(.system(size: 15, weight: .semibold))
             Spacer()
+            Picker("Startup mode", selection: Binding(get: { model.startupMode }, set: { model.setStartupMode($0) })) {
+                Text("Staged").tag(StartupMode.staged)
+                Text("Parallel").tag(StartupMode.parallel)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 170)
+            .help("Staged: start in order, waiting for each stage. Parallel: start everything at once.")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
     }
 
     private var explanation: some View {
-        Text("ใส่เลขลำดับให้แต่ละ service — เลขน้อยเริ่มก่อน, เลขเท่ากันเริ่มพร้อมกัน. "
-             + "ลำดับถัดไปจะเริ่มเมื่อทุกตัวในลำดับก่อนหน้าพร้อมแล้ว (เจอ log เช่น “compiled successfully”).")
+        Text(model.startupMode == .parallel
+             ? "โหมด Parallel: Run All เริ่มทุก service พร้อมกันทันที ไม่รอกัน — เลขลำดับยังเก็บไว้ใช้เมื่อกลับไปโหมด Staged."
+             : "ใส่เลขลำดับให้แต่ละ service — เลขน้อยเริ่มก่อน, เลขเท่ากันเริ่มพร้อมกัน. "
+               + "ลำดับถัดไปจะเริ่มเมื่อทุกตัวในลำดับก่อนหน้าพร้อมแล้ว (เจอ log เช่น “compiled successfully”).")
             .font(.system(size: 11.5))
             .foregroundStyle(Theme.secondaryText)
     }
 
     /// "1 → master-data   2 → authentication, profile …"
     private var summary: some View {
-        let steps = StartPlan.stages(model.runtimes.map { (id: $0.id, stage: $0.config.startStage) })
+        let steps = StartPlan.stages(model.runtimes.map { (id: $0.id, stage: $0.config.startStage) },
+                                     mode: model.startupMode)
         return VStack(alignment: .leading, spacing: 6) {
             Text("Run All จะเริ่มตามนี้").font(.system(size: 12, weight: .semibold))
             ForEach(Array(steps.enumerated()), id: \.offset) { index, ids in

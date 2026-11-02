@@ -18,6 +18,8 @@ public struct ServiceConfig: Codable, Identifiable, Hashable, Sendable {
     public var startStage: Int
     /// Stop whatever still holds this service's ports before it starts (a leftover from a previous run).
     public var freesPortsOnStart: Bool
+    /// Start the service again (with back-off, see `RestartPolicy`) when it exits on its own.
+    public var autoRestart: Bool
     /// Ports typed in by the user.
     public var ports: [Int]
     /// Ports this service was seen listening on; remembered automatically.
@@ -29,7 +31,8 @@ public struct ServiceConfig: Codable, Identifiable, Hashable, Sendable {
 
     public init(id: UUID = UUID(), name: String, path: String, command: String, url: String? = nil,
                 icon: String? = nil, readyPattern: String? = nil, startStage: Int = 1,
-                freesPortsOnStart: Bool = true, ports: [Int] = [], learnedPorts: [Int] = []) {
+                freesPortsOnStart: Bool = true, ports: [Int] = [], learnedPorts: [Int] = [],
+                autoRestart: Bool = false) {
         self.id = id
         self.name = name
         self.path = path
@@ -41,6 +44,7 @@ public struct ServiceConfig: Codable, Identifiable, Hashable, Sendable {
         self.freesPortsOnStart = freesPortsOnStart
         self.ports = ports
         self.learnedPorts = learnedPorts
+        self.autoRestart = autoRestart
     }
 
     /// Config files written before `startStage` existed load with stage 1.
@@ -55,6 +59,7 @@ public struct ServiceConfig: Codable, Identifiable, Hashable, Sendable {
         readyPattern = try container.decodeIfPresent(String.self, forKey: .readyPattern)
         startStage = StartPlan.clamped(try container.decodeIfPresent(Int.self, forKey: .startStage) ?? 1)
         freesPortsOnStart = try container.decodeIfPresent(Bool.self, forKey: .freesPortsOnStart) ?? true
+        autoRestart = try container.decodeIfPresent(Bool.self, forKey: .autoRestart) ?? false
         ports = try container.decodeIfPresent([Int].self, forKey: .ports) ?? []
         learnedPorts = try container.decodeIfPresent([Int].self, forKey: .learnedPorts) ?? []
         tileSpan = try container.decodeIfPresent(Int.self, forKey: .tileSpan)

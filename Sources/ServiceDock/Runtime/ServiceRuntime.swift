@@ -2,6 +2,14 @@ import Foundation
 import Observation
 import ServiceDockCore
 
+/// A crash worth telling the user about.
+enum CrashEvent: Equatable {
+    /// Exited on its own and auto-restart is off.
+    case crashed(exitCode: Int32)
+    /// Auto-restart tried `attempts` times and stopped.
+    case gaveUp(attempts: Int)
+}
+
 /// Live state of one service: its process, status, logs and resource usage.
 @Observable @MainActor
 final class ServiceRuntime: Identifiable {
@@ -44,6 +52,11 @@ final class ServiceRuntime: Identifiable {
     @ObservationIgnored private let registry: RunRegistry
     @ObservationIgnored private let protectedGroups: @MainActor () -> Set<Int32>
     @ObservationIgnored private let onConfigChange: @MainActor () -> Void
+    /// Told when a crash should be reported. Set by `AppModel`.
+    @ObservationIgnored var onCrash: (@MainActor (ServiceRuntime, CrashEvent) -> Void)?
+    @ObservationIgnored private var restartPolicy = RestartPolicy()
+    /// Pending automatic restart after a crash.
+    @ObservationIgnored private var autoRestartTask: Task<Void, Never>?
 
     nonisolated var id: UUID { configID }
     @ObservationIgnored private nonisolated let configID: UUID
@@ -99,12 +112,19 @@ final class ServiceRuntime: Identifiable {
         if newConfig.readyPattern != config.readyPattern {
             readyMatcher = ReadyMatcher(customPattern: newConfig.readyPattern)
         }
+        if !newConfig.autoRestart { cancelAutoRestart() }
         config = newConfig
     }
 
     // MARK: - Lifecycle
 
+    /// A start asked for by the user (or Run All): forgets earlier crashes.
     func start() {
+        cancelAutoRestart()
+        startProcess()
+    }
+
+    private func startProcess() {
         guard !status.isAlive else { return }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -131,6 +151,7 @@ final class ServiceRuntime: Identifiable {
     }
 
     func stop() {
+        cancelAutoRestart()
         restartAfterExit = false
         if case .down = status { status = .stopped }
         requestStop()
@@ -138,6 +159,7 @@ final class ServiceRuntime: Identifiable {
 
     /// Stops, waits for the old process group to exit (so ports are free), then starts again.
     func restart() {
+        cancelAutoRestart()
         guard status.isAlive else { return start() }
         restartAfterExit = true
         requestStop()
@@ -145,6 +167,7 @@ final class ServiceRuntime: Identifiable {
 
     /// Synchronous best-effort kill used when the app quits.
     func terminateForQuit() -> ProcessRunner? {
+        autoRestartTask?.cancel()
         restartAfterExit = false
         launchTask?.cancel()
         generation += 1
@@ -242,7 +265,7 @@ final class ServiceRuntime: Identifiable {
 
         if !hasSeenReadyLine, cleaned.contains(where: readyMatcher.isReady) {
             hasSeenReadyLine = true
-            if status == .starting { status = .running }
+            if status == .starting { markRunning() }
             learnPorts()
         }
 
@@ -283,7 +306,42 @@ final class ServiceRuntime: Identifiable {
         if restartAfterExit {
             restartAfterExit = false
             start()
+        } else if !wasStopping {
+            handleCrash(code: code)
         }
+    }
+
+    private func markRunning() {
+        status = .running
+        restartPolicy.becameRunning(at: Date())
+    }
+
+    /// Restarts with back-off when auto-restart is on; otherwise (or when it gives up) reports the crash.
+    private func handleCrash(code: Int32) {
+        guard config.autoRestart else {
+            onCrash?(self, .crashed(exitCode: code))
+            return
+        }
+        switch restartPolicy.crashed(at: Date()) {
+        case .giveUp:
+            note("Gave up after \(RestartPolicy.delays.count) restarts", level: .error)
+            onCrash?(self, .gaveUp(attempts: RestartPolicy.delays.count))
+        case .restart(let delay, let attempt):
+            note("Crashed — restarting in \(delay.components.seconds)s (\(attempt)/\(RestartPolicy.delays.count))",
+                 level: .warn)
+            autoRestartTask = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, let self, case .down = self.status else { return }
+                self.autoRestartTask = nil
+                self.startProcess()
+            }
+        }
+    }
+
+    private func cancelAutoRestart() {
+        autoRestartTask?.cancel()
+        autoRestartTask = nil
+        restartPolicy.reset()
     }
 
     /// Remembers the ports this service listens on, so the next start can clear them. Two samples:
@@ -321,7 +379,7 @@ final class ServiceRuntime: Identifiable {
         memoryKB = sample.memoryKB
 
         if status == .starting, let startedAt, now.timeIntervalSince(startedAt) >= Readiness.gracePeriod {
-            status = .running
+            markRunning()
             learnPorts()
         }
         refreshCount += 1

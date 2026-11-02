@@ -1,6 +1,7 @@
 import AppKit
 import ServiceDockCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum WindowID {
     static let service = "service"
@@ -39,6 +40,7 @@ enum PanelRoute: Equatable {
     case startupOrder
     case overview
     case editor(EditorTarget)
+    case importConfig(ImportDraft)
 }
 
 struct MenuBarPanel: View {
@@ -93,7 +95,7 @@ struct MenuBarPanel: View {
         case .list: ($listWidth, $listHeight, listSize)
         case .overview: ($overviewWidth, $overviewHeight, overviewSize)
         case .service where backRoute == .overview: ($overviewWidth, $overviewHeight, overviewSize)
-        case .service, .startupOrder, .editor: ($detailWidth, $detailHeight, detailSize)
+        case .service, .startupOrder, .editor, .importConfig: ($detailWidth, $detailHeight, detailSize)
         }
     }
 
@@ -105,6 +107,33 @@ struct MenuBarPanel: View {
     private func goBack() {
         route = backRoute == route ? .list : backRoute
         backRoute = .list
+    }
+
+    private func exportConfig() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "servicedock-config.json"
+        panel.allowedContentTypes = [.json]
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try model.exportConfig(to: url)
+        } catch {
+            model.storageError = error.localizedDescription
+        }
+    }
+
+    private func chooseImportFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let config = ConfigTransfer.portable(try ConfigStore.load(from: url), home: NSHomeDirectory())
+            go(to: .importConfig(ImportDraft(fileName: url.lastPathComponent, config: config)))
+        } catch {
+            model.storageError = error.localizedDescription
+        }
     }
 
     var body: some View {
@@ -131,6 +160,9 @@ struct MenuBarPanel: View {
             case .editor(let target):
                 ServiceEditorView(target: target, onClose: goBack)
                     .id(target)
+                    .frame(width: detailSize.width, height: detailSize.height)
+            case .importConfig(let draft):
+                ImportPage(draft: draft, onDone: goBack)
                     .frame(width: detailSize.width, height: detailSize.height)
             }
         }
@@ -205,10 +237,14 @@ struct MenuBarPanel: View {
                 Button("All Services Monitor") { go(to: .overview) }
                 Button("Clear All Error Counts", action: model.clearAllErrorCounts)
                     .disabled(!model.hasErrorCounts)
+                Toggle("Notify When a Service Dies",
+                       isOn: Binding(get: { model.notifyOnCrash }, set: { model.setNotifyOnCrash($0) }))
                 Divider()
                 Button("Reveal Config File") {
                     NSWorkspace.shared.activateFileViewerSelecting([ConfigStore.defaultURL])
                 }
+                Button("Export Config…", action: exportConfig)
+                Button("Import Config…", action: chooseImportFile)
                 Divider()
                 Button("Quit ServiceDock") { NSApp.terminate(nil) }.keyboardShortcut("q")
             } label: {

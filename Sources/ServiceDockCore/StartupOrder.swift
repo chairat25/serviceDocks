@@ -1,5 +1,11 @@
 import Foundation
 
+/// How Run All starts services: stage by stage, or all at once.
+public enum StartupMode: String, Codable, CaseIterable, Hashable, Sendable {
+    case staged
+    case parallel
+}
+
 /// Groups services into start-up stages. Stage 1 starts first; each later stage starts
 /// only after the previous one is ready (e.g. a service that must finish compiling first).
 public enum StartPlan {
@@ -10,7 +16,9 @@ public enum StartPlan {
     }
 
     /// Lowest stage first; inside a stage the original list order is kept.
-    public static func stages(_ items: [(id: UUID, stage: Int)]) -> [[UUID]] {
+    /// In `.parallel` every service is one stage, so nothing waits for anything.
+    public static func stages(_ items: [(id: UUID, stage: Int)], mode: StartupMode = .staged) -> [[UUID]] {
+        if mode == .parallel { return items.isEmpty ? [] : [items.map(\.id)] }
         let grouped = Dictionary(grouping: items, by: { $0.stage })
         return grouped.keys.sorted().map { stage in grouped[stage, default: []].map(\.id) }
     }

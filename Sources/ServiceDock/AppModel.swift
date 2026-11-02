@@ -26,12 +26,18 @@ final class AppModel {
     private(set) var startup: StartupState?
     /// Saved commands offered in Edit Service.
     private(set) var commandPresets: [String] = []
+    /// Run All starts stage by stage, or everything at once.
+    private(set) var startupMode = StartupMode.staged
+    /// Post a macOS notification when a service dies.
+    private(set) var notifyOnCrash = true
 
     @ObservationIgnored private let storeURL: URL
     @ObservationIgnored private let registry: RunRegistry
     @ObservationIgnored private var nextLogID = 0
     @ObservationIgnored private var statsTask: Task<Void, Never>?
     @ObservationIgnored private var startupTask: Task<Void, Never>?
+    /// Posts "service died" notifications. Activated by `AppDelegate`.
+    @ObservationIgnored let notifier = CrashNotifier()
 
     init(storeURL: URL = ConfigStore.defaultURL, registry: RunRegistry = RunRegistry()) {
         self.storeURL = storeURL
@@ -42,6 +48,8 @@ final class AppModel {
             runtimes = config.services.map(makeRuntime)
             stageTimeoutSeconds = config.stageTimeoutSeconds
             commandPresets = config.commandPresets
+            startupMode = config.startupMode
+            notifyOnCrash = config.notifyOnCrash
         } catch {
             logger.error("Config load failed: \(error.localizedDescription, privacy: .public)")
             storageError = error.localizedDescription
@@ -63,13 +71,13 @@ final class AppModel {
 
     // MARK: - Bulk actions
 
-    /// Starts every service stage by stage (see `StartPlan`).
+    /// Starts every service, stage by stage or all at once (see `startupMode`).
     func runAll() {
         startupTask?.cancel()
         startupTask = Task { await runStaged() }
     }
 
-    /// Stops everything, waits until the old processes are gone (ports free), then starts in stage order.
+    /// Stops everything, waits until the old processes are gone (ports free), then starts again (see `startupMode`).
     func restartAll() {
         startupTask?.cancel()
         startupTask = Task {
@@ -108,6 +116,18 @@ final class AppModel {
         stageTimeoutSeconds = min(max(seconds, AppConfig.stageTimeoutRange.lowerBound), AppConfig.stageTimeoutRange.upperBound)
         save()
     }
+    func setStartupMode(_ mode: StartupMode) {
+        guard mode != startupMode else { return }
+        startupMode = mode
+        save()
+    }
+
+    func setNotifyOnCrash(_ enabled: Bool) {
+        guard enabled != notifyOnCrash else { return }
+        notifyOnCrash = enabled
+        save()
+    }
+
     func clearCombinedLogs() { combinedLogs.clear() }
 
     // MARK: - Editing
@@ -187,6 +207,43 @@ final class AppModel {
         save()
     }
 
+    // MARK: - Export / Import
+
+    enum ImportMode {
+        /// Add new services, update same-name ones, keep the rest.
+        case merge
+        /// The imported file becomes the whole config.
+        case replace
+    }
+
+    func exportConfig(to url: URL) throws(ConfigStoreError) {
+        try ConfigStore.save(ConfigTransfer.portable(appConfig, home: NSHomeDirectory()), to: url)
+    }
+
+    /// Applies an imported config. Runtimes whose id survives keep running with the new settings;
+    /// removed services are stopped.
+    func applyImport(_ imported: AppConfig, mode: ImportMode) {
+        let next = switch mode {
+        case .merge: ConfigTransfer.merge(local: appConfig, imported: imported)
+        case .replace: ConfigTransfer.replace(local: appConfig, imported: imported)
+        }
+        let keptIDs = Set(next.services.map(\.id))
+        for runtime in runtimes where !keptIDs.contains(runtime.id) && runtime.status.isAlive {
+            runtime.stop()
+            retiring = retiring + [runtime]
+        }
+        runtimes = next.services.map { config in
+            guard let existing = runtime(for: config.id) else { return makeRuntime(config) }
+            existing.update(config: config)
+            return existing
+        }
+        stageTimeoutSeconds = next.stageTimeoutSeconds
+        commandPresets = next.commandPresets
+        startupMode = next.startupMode
+        notifyOnCrash = next.notifyOnCrash
+        save()
+    }
+
     // MARK: - Quit
 
     /// Sends SIGTERM to every service, waits briefly, then SIGKILLs whatever is left.
@@ -203,7 +260,7 @@ final class AppModel {
     // MARK: - Private
 
     private func runStaged() async {
-        let stages = StartPlan.stages(runtimes.map { (id: $0.id, stage: $0.config.startStage) })
+        let stages = StartPlan.stages(runtimes.map { (id: $0.id, stage: $0.config.startStage) }, mode: startupMode)
         let alreadyUp = Set(runtimes.filter { $0.status.isAlive }.map(\.id))
         var notes: [String] = []
         defer { if Task.isCancelled { startup = nil } }
@@ -243,13 +300,25 @@ final class AppModel {
     }
 
     private func makeRuntime(_ config: ServiceConfig) -> ServiceRuntime {
-        ServiceRuntime(
+        let runtime = ServiceRuntime(
             config: config, registry: registry,
             protectedGroups: { [weak self] in Set(self?.runtimes.compactMap(\.processGroup) ?? []) },
             onConfigChange: { [weak self] in self?.save() }
         ) { [weak self] runtime, texts, level in
             self?.emit(from: runtime, texts: texts, level: level) ?? []
         }
+        runtime.onCrash = { [weak self] runtime, event in self?.report(event, from: runtime) }
+        return runtime
+    }
+
+    private func report(_ event: CrashEvent, from runtime: ServiceRuntime) {
+        guard notifyOnCrash else { return }
+        let body = switch event {
+        case .crashed(let code) where code < 0: "Crashed (signal \(-code))"
+        case .crashed(let code): "Crashed (exit \(code))"
+        case .gaveUp(let attempts): "Gave up after \(attempts) restarts"
+        }
+        notifier.post(serviceID: runtime.id, title: runtime.config.name, body: body)
     }
 
     private func emit(from runtime: ServiceRuntime, texts: [String], level: LogLevel?) -> [LogLine] {
@@ -263,11 +332,15 @@ final class AppModel {
         return lines
     }
 
+    /// Everything written to `services.json` (and to an exported file).
+    private var appConfig: AppConfig {
+        AppConfig(services: runtimes.map(\.config), stageTimeoutSeconds: stageTimeoutSeconds,
+                  commandPresets: commandPresets, startupMode: startupMode, notifyOnCrash: notifyOnCrash)
+    }
+
     private func save() {
         do {
-            try ConfigStore.save(AppConfig(services: runtimes.map(\.config), stageTimeoutSeconds: stageTimeoutSeconds,
-                                           commandPresets: commandPresets),
-                                 to: storeURL)
+            try ConfigStore.save(appConfig, to: storeURL)
             storageError = nil
         } catch {
             logger.error("Config save failed: \(error.localizedDescription, privacy: .public)")

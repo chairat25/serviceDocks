@@ -46,10 +46,15 @@ private struct MenuBarLabel: View {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
+    private let logWindows = LogWindowPresenter()
     private var signalSources: [DispatchSourceSignal] = []
 
     /// `kill` / `pkill` / Ctrl-C / logout deliver these; stop the services before dying.
     func applicationDidFinishLaunching(_ notification: Notification) {
+        model.notifier.activate { [weak self] id in
+            guard let self else { return }
+            self.logWindows.show(serviceID: id, model: self.model)
+        }
         for signalNumber in [SIGTERM, SIGINT, SIGHUP] {
             signal(signalNumber, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: .main)
