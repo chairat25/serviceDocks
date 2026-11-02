@@ -94,3 +94,43 @@ struct StartupConfigTests {
         #expect(decoded == config)
     }
 }
+
+@Suite("Startup mode")
+struct StartupModeTests {
+    let a = UUID(), b = UUID(), c = UUID()
+
+    @Test("parallel mode puts every service in one stage, in list order")
+    func parallel() {
+        #expect(StartPlan.stages([(a, 2), (b, 1), (c, 3)], mode: .parallel) == [[a, b, c]])
+    }
+
+    @Test("parallel mode with no services yields no stages")
+    func parallelEmpty() {
+        #expect(StartPlan.stages([], mode: .parallel).isEmpty)
+    }
+
+    @Test("staged is the default mode")
+    func stagedDefault() {
+        #expect(StartPlan.stages([(a, 2), (b, 1)]) == StartPlan.stages([(a, 2), (b, 1)], mode: .staged))
+    }
+
+    @Test("old config files load staged, with notifications on and auto-restart off")
+    func legacyDefaults() throws {
+        let json = """
+        {"services":[{"id":"6F1C2B3A-0000-4000-8000-000000000001","name":"auth","path":"/a",
+        "command":"yarn dev","icon":"server.rack"}]}
+        """
+        let config = try JSONDecoder().decode(AppConfig.self, from: Data(json.utf8))
+        #expect(config.startupMode == .staged)
+        #expect(config.notifyOnCrash)
+        #expect(config.services.first?.autoRestart == false)
+    }
+
+    @Test("startup mode, notify and auto-restart round-trip")
+    func roundTrip() throws {
+        let service = ServiceConfig(name: "auth", path: "/a", command: "x", autoRestart: true)
+        let config = AppConfig(services: [service], startupMode: .parallel, notifyOnCrash: false)
+        let decoded = try JSONDecoder().decode(AppConfig.self, from: JSONEncoder().encode(config))
+        #expect(decoded == config)
+    }
+}

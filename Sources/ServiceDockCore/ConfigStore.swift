@@ -10,12 +10,18 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var stageTimeoutSeconds: Int
     /// Saved commands offered in Edit Service.
     public var commandPresets: [String]
+    /// Run All / Restart All: stage by stage, or everything at once.
+    public var startupMode: StartupMode
+    /// Post a macOS notification when a service dies.
+    public var notifyOnCrash: Bool
 
     public init(services: [ServiceConfig] = [], stageTimeoutSeconds: Int = AppConfig.defaultStageTimeout,
-                commandPresets: [String] = []) {
+                commandPresets: [String] = [], startupMode: StartupMode = .staged, notifyOnCrash: Bool = true) {
         self.services = services
         self.stageTimeoutSeconds = stageTimeoutSeconds
         self.commandPresets = commandPresets
+        self.startupMode = startupMode
+        self.notifyOnCrash = notifyOnCrash
     }
 
     public init(from decoder: Decoder) throws {
@@ -24,6 +30,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         let timeout = try container.decodeIfPresent(Int.self, forKey: .stageTimeoutSeconds) ?? Self.defaultStageTimeout
         commandPresets = try container.decodeIfPresent([String].self, forKey: .commandPresets) ?? []
         stageTimeoutSeconds = min(max(timeout, Self.stageTimeoutRange.lowerBound), Self.stageTimeoutRange.upperBound)
+        startupMode = try container.decodeIfPresent(StartupMode.self, forKey: .startupMode) ?? .staged
+        notifyOnCrash = try container.decodeIfPresent(Bool.self, forKey: .notifyOnCrash) ?? true
     }
 }
 
