@@ -71,7 +71,7 @@ Pure functions, unit tested:
   - Delays: 2 s, 5 s, 10 s; at most 3 attempts.
   - The attempt counter resets once the service has been `running` for 60 s continuously.
   - API: `mutating func crashed(at:) -> Decision` where `Decision` is `.restart(after: Duration, attempt: Int)` or
-    `.giveUp`; `mutating func becameRunning(at:)`, `mutating func reset()`, and a check that applies the 60 s reset.
+    `.giveUp`; `mutating func becameRunning(at:)`, `mutating func reset()`. The 60 s reset is applied when the next crash is recorded.
 - `ServiceRuntime` owns a `RestartPolicy` and a pending restart `Task`. A manual start/stop/restart or disabling the
   toggle cancels the pending task and resets the policy.
 - Log notes: "Crashed — restarting in 2s (1/3)" and "Gave up after 3 restarts".
