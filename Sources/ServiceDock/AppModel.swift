@@ -36,6 +36,8 @@ final class AppModel {
     @ObservationIgnored private var nextLogID = 0
     @ObservationIgnored private var statsTask: Task<Void, Never>?
     @ObservationIgnored private var startupTask: Task<Void, Never>?
+    /// Posts "service died" notifications. Activated by `AppDelegate`.
+    @ObservationIgnored let notifier = CrashNotifier()
 
     init(storeURL: URL = ConfigStore.defaultURL, registry: RunRegistry = RunRegistry()) {
         self.storeURL = storeURL
@@ -117,6 +119,12 @@ final class AppModel {
     func setStartupMode(_ mode: StartupMode) {
         guard mode != startupMode else { return }
         startupMode = mode
+        save()
+    }
+
+    func setNotifyOnCrash(_ enabled: Bool) {
+        guard enabled != notifyOnCrash else { return }
+        notifyOnCrash = enabled
         save()
     }
 
@@ -255,13 +263,25 @@ final class AppModel {
     }
 
     private func makeRuntime(_ config: ServiceConfig) -> ServiceRuntime {
-        ServiceRuntime(
+        let runtime = ServiceRuntime(
             config: config, registry: registry,
             protectedGroups: { [weak self] in Set(self?.runtimes.compactMap(\.processGroup) ?? []) },
             onConfigChange: { [weak self] in self?.save() }
         ) { [weak self] runtime, texts, level in
             self?.emit(from: runtime, texts: texts, level: level) ?? []
         }
+        runtime.onCrash = { [weak self] runtime, event in self?.report(event, from: runtime) }
+        return runtime
+    }
+
+    private func report(_ event: CrashEvent, from runtime: ServiceRuntime) {
+        guard notifyOnCrash else { return }
+        let body = switch event {
+        case .crashed(let code) where code < 0: "Crashed (signal \(-code))"
+        case .crashed(let code): "Crashed (exit \(code))"
+        case .gaveUp(let attempts): "Gave up after \(attempts) restarts"
+        }
+        notifier.post(serviceID: runtime.id, title: runtime.config.name, body: body)
     }
 
     private func emit(from runtime: ServiceRuntime, texts: [String], level: LogLevel?) -> [LogLine] {

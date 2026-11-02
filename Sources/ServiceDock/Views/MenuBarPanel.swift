@@ -205,6 +205,8 @@ struct MenuBarPanel: View {
                 Button("All Services Monitor") { go(to: .overview) }
                 Button("Clear All Error Counts", action: model.clearAllErrorCounts)
                     .disabled(!model.hasErrorCounts)
+                Toggle("Notify When a Service Dies",
+                       isOn: Binding(get: { model.notifyOnCrash }, set: { model.setNotifyOnCrash($0) }))
                 Divider()
                 Button("Reveal Config File") {
                     NSWorkspace.shared.activateFileViewerSelecting([ConfigStore.defaultURL])
