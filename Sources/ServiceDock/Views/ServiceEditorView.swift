@@ -67,6 +67,7 @@ struct ServiceEditorView: View {
                 TextField("URL (optional)", text: optionalBinding(\.url), prompt: Text("http://localhost:3001"))
                 TextField("Ready pattern (optional regex)", text: optionalBinding(\.readyPattern),
                           prompt: Text("leave empty for built-in detection"))
+                Toggle("Restart if it crashes (up to \(RestartPolicy.delays.count) times)", isOn: $draft.autoRestart)
                 Toggle("Stop leftover processes on its ports before starting", isOn: $draft.freesPortsOnStart)
                 if draft.freesPortsOnStart {
                     TextField("Extra ports to free (optional)", text: $portsText, prompt: Text("e.g. 8000, 50055"))
