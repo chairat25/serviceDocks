@@ -26,6 +26,10 @@ final class AppModel {
     private(set) var startup: StartupState?
     /// Saved commands offered in Edit Service.
     private(set) var commandPresets: [String] = []
+    /// Run All starts stage by stage, or everything at once.
+    private(set) var startupMode = StartupMode.staged
+    /// Post a macOS notification when a service dies.
+    private(set) var notifyOnCrash = true
 
     @ObservationIgnored private let storeURL: URL
     @ObservationIgnored private let registry: RunRegistry
@@ -42,6 +46,8 @@ final class AppModel {
             runtimes = config.services.map(makeRuntime)
             stageTimeoutSeconds = config.stageTimeoutSeconds
             commandPresets = config.commandPresets
+            startupMode = config.startupMode
+            notifyOnCrash = config.notifyOnCrash
         } catch {
             logger.error("Config load failed: \(error.localizedDescription, privacy: .public)")
             storageError = error.localizedDescription
@@ -63,13 +69,13 @@ final class AppModel {
 
     // MARK: - Bulk actions
 
-    /// Starts every service stage by stage (see `StartPlan`).
+    /// Starts every service, stage by stage or all at once (see `startupMode`).
     func runAll() {
         startupTask?.cancel()
         startupTask = Task { await runStaged() }
     }
 
-    /// Stops everything, waits until the old processes are gone (ports free), then starts in stage order.
+    /// Stops everything, waits until the old processes are gone (ports free), then starts again (see `startupMode`).
     func restartAll() {
         startupTask?.cancel()
         startupTask = Task {
@@ -108,6 +114,12 @@ final class AppModel {
         stageTimeoutSeconds = min(max(seconds, AppConfig.stageTimeoutRange.lowerBound), AppConfig.stageTimeoutRange.upperBound)
         save()
     }
+    func setStartupMode(_ mode: StartupMode) {
+        guard mode != startupMode else { return }
+        startupMode = mode
+        save()
+    }
+
     func clearCombinedLogs() { combinedLogs.clear() }
 
     // MARK: - Editing
@@ -203,7 +215,7 @@ final class AppModel {
     // MARK: - Private
 
     private func runStaged() async {
-        let stages = StartPlan.stages(runtimes.map { (id: $0.id, stage: $0.config.startStage) })
+        let stages = StartPlan.stages(runtimes.map { (id: $0.id, stage: $0.config.startStage) }, mode: startupMode)
         let alreadyUp = Set(runtimes.filter { $0.status.isAlive }.map(\.id))
         var notes: [String] = []
         defer { if Task.isCancelled { startup = nil } }
@@ -263,11 +275,15 @@ final class AppModel {
         return lines
     }
 
+    /// Everything written to `services.json` (and to an exported file).
+    private var appConfig: AppConfig {
+        AppConfig(services: runtimes.map(\.config), stageTimeoutSeconds: stageTimeoutSeconds,
+                  commandPresets: commandPresets, startupMode: startupMode, notifyOnCrash: notifyOnCrash)
+    }
+
     private func save() {
         do {
-            try ConfigStore.save(AppConfig(services: runtimes.map(\.config), stageTimeoutSeconds: stageTimeoutSeconds,
-                                           commandPresets: commandPresets),
-                                 to: storeURL)
+            try ConfigStore.save(appConfig, to: storeURL)
             storageError = nil
         } catch {
             logger.error("Config save failed: \(error.localizedDescription, privacy: .public)")
