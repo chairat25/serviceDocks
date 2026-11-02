@@ -21,6 +21,9 @@ ServiceDock คือ macOS menu-bar app สำหรับ dev ที่ต้�
 | **ปรับขนาด popup** | ลากมุมขวาล่างของ popup — แต่ละหน้าจำขนาดของตัวเอง, ดับเบิลคลิกมุม = ขนาดปกติ |
 | **Clear error count** | คลิกขวาที่ badge แดง → *Clear Error Count* (log ยังอยู่) หรือเมนู ⋯ → *Clear All Error Counts* |
 | **ไม่ทิ้ง process ค้าง** | ทุก service รันใน process group ของตัวเอง — stop/quit จะฆ่า `yarn → node → …` ทั้งต้นไม้ (SIGTERM, ไม่ตายใน 5 วิ → SIGKILL) |
+| **Export / Import config** | เมนู ⋯ → *Export Config…* บันทึกเป็น `servicedock-config.json` (path ใต้ home เขียนเป็น `~/…`) → อีกเครื่อง *Import Config…* เลือก **Merge** (เพิ่มตัวใหม่ + อัปเดตตัวชื่อซ้ำ) หรือ **Replace All** — ถ้า folder ไม่เจอ กด *Choose New Root…* เลือก folder หลักใหม่ครั้งเดียว ทุก service ย้ายตาม |
+| **Auto-restart เมื่อ crash** | toggle *Restart if it crashes* ใน Edit Service — รอ 2 / 5 / 10 วิ สูงสุด 3 ครั้ง, รันได้เกิน 60 วิ นับใหม่ |
+| **แจ้งเตือนเมื่อ service ตาย** | notification ของ macOS เมื่อ service Down (ถ้าเปิด auto-restart แจ้งเฉพาะตอนยอมแพ้) คลิกเพื่อเปิด log — ปิดได้ที่ ⋯ → *Notify When a Service Dies* |
 
 ## ฆ่าตัวเก่าที่ถือ port ก่อนรัน
 
@@ -38,6 +41,8 @@ ServiceDock คือ macOS menu-bar app สำหรับ dev ที่ต้�
 ## Startup order (ลำดับการ run)
 
 เมนู ⋯ → **Startup Order…** พิมพ์ **เลขลำดับ** ข้างชื่อแต่ละ service (ค่าเริ่มต้น = 1 ทุกตัว, เลขน้อยเริ่มก่อน, เลขเท่ากันเริ่มพร้อมกัน) ด้านล่างมีสรุปลำดับให้ดูทันที
+
+ต้องการให้ทุกตัวเริ่มพร้อมกัน ไม่รอลำดับ → สลับเป็น **Parallel** ที่หัวหน้า Startup Order (บันทึกไว้, Run All / Restart All ใช้โหมดนี้; เลขลำดับยังเก็บไว้)
 
 - **Run All / Restart All** รัน Stage 1 ก่อน — ตัวที่อยู่ stage เดียวกันรันพร้อมกัน
 - Stage ถัดไป **รอจนทุกตัวใน stage ก่อนหน้าพิมพ์บรรทัด "พร้อม"** (เช่น `compiled successfully`, `Nest application successfully started`) จึงเริ่ม
@@ -64,7 +69,6 @@ curl -fsSL https://raw.githubusercontent.com/chairat25/serviceDocks/main/scripts
 ต้องการ macOS 15+ และ Xcode Command Line Tools (Swift 6)
 
 ```bash
-cd service-dock
 scripts/build-app.sh            # → build/ServiceDock.app
 scripts/build-app.sh --install  # build แล้ว copy ไป /Applications
 open build/ServiceDock.app
@@ -141,6 +145,6 @@ swift run ServiceDock
 
 ## Limitations (v0.1)
 
-- ยังไม่มี auto-restart เมื่อ crash, group/profile, env override ใน app, health check ผ่าน HTTP
+- ยังไม่มี group/profile, env override ใน app, health check ผ่าน HTTP
 - Log เก็บใน memory ล่าสุด 3,000 บรรทัด/service และ 6,000 บรรทัดในหน้ารวม
 - `.env` ตรวจเฉพาะไฟล์ใน root ของ folder service (ไม่นับ `.env.example` / `.sample` / `.template`)
